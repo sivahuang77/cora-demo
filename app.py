@@ -12,7 +12,7 @@ st.sidebar.header("⚙️ Control Panel")
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     api_status = "✅ AI Connection Successful"
 except:
     api_status = "❌ API Key Not Detected"
