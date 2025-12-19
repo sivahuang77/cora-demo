@@ -1,12 +1,16 @@
 import streamlit as st
 import google.generativeai as genai
-from datetime import datetime
 import json
+from datetime import datetime
 
-# --- 1. 頁面配置 ---
-st.set_page_config(page_title="CORA 5.0 Leaf Secretary", layout="wide")
+# ========== 1. 頁面配置 ==========
+st.set_page_config(
+    page_title="CORA 業務秘書",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
-# --- 2. 初始化 ---
+# ========== 2. 初始化 Gemini API ==========
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
@@ -15,146 +19,161 @@ except:
     st.error("❌ API Key 未配置")
     st.stop()
 
-# 本體論數據
-customers = {
-    "Amazon": {
-        "industry": "E-Commerce",
-        "spend": "$2.5M", 
-        "risk": "Low", 
-        "history": "長期合作夥伴，過去3年每年增長10%。最近在詢問新產品線。",
-        "pain_points": "希望降低運維成本，對價格敏感度中等。",
-        "limit": 15
-    },
-    "Google": {
-        "industry": "Tech",
-        "spend": "$1.2M", 
-        "risk": "Medium", 
-        "history": "合同還有3個月到期，競爭對手正在接觸他們。",
-        "pain_points": "需要更高的SLA服務等級，對價格不敏感，但對質量要求極高。",
-        "limit": 5
-    },
-    "Tesla": {
-        "industry": "Automotive",
-        "spend": "$800K", 
-        "risk": "High", 
-        "history": "去年有兩次延遲付款記錄。正在進行工廠數字化轉型。",
-        "pain_points": "預算被削減，需要極致的性價比。",
-        "limit": 3
+# ========== 3. 本體論數據 - 業務背景 ==========
+BUSINESS_CONTEXT = """
+我們是一家B2B軟體公司，提供企業決策加速系統。
+
+我們的客戶包括：
+- Amazon (年度支出: $2.5M, 風險: Low)
+- Google (年度支出: $1.2M, 風險: Medium)
+- Tesla (年度支出: $800K, 風險: High)
+
+我們的主要業務政策：
+- Low 風險客戶: 最大折扣 15%
+- Medium 風險客戶: 最大折扣 5%
+- High 風險客戶: 最大折扣 3%
+
+我們的決策框架：
+1. 情況分析 (Situation)
+2. 策略選項 (Options)
+3. AI 建議 (Recommendation)
+4. 風險評估 (Risk)
+"""
+
+# ========== 4. CSS 樣式優化 ==========
+st.markdown("""
+<style>
+    /* 隱藏底部 Streamlit 標籤 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* 最大化內容寬度 */
+    .stChatMessage {
+        max-width: 100%;
     }
-}
+    
+    /* 對話框樣式 */
+    [data-testid="chatAvatarIcon-assistant"] {
+        background-color: #10a37f;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 3. 側邊欄 ---
-st.sidebar.title("⚙️ CORA 控制台")
-selected_customer = st.sidebar.selectbox("選擇客戶", list(customers.keys()))
-customer = customers[selected_customer]
+# ========== 5. 標題 ==========
+st.title("🤖 CORA 業務秘書")
+st.caption("📊 您的 AI 決策隨側助手 - 提供實時業務建議")
+st.divider()
 
-# 顯示客戶信息卡
+# ========== 6. 對話狀態管理 ==========
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    # 秘書的開場白
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": f"""👋 您好！我是 CORA 業務秘書。我來幫助您進行業務決策。
+
+📋 我可以協助您：
+• **客戶管理** - 分析客戶信息、商務談判策略
+• **銷售決策** - 折扣方案、合同條款建議
+• **風險評估** - 交易風險分析、合規檢查
+• **策略規劃** - 業務發展建議、市場分析
+
+💡 告訴我您需要什麼幫助，我會基於公司政策和數據給您建議。
+
+例如，您可以問我：
+• "Amazon 要求 15% 折扣怎麼辦？"
+• "我們應該如何與 Google 續約？"
+• "新客戶的信用風險評估"
+"""
+    })
+
+# ========== 7. 顯示對話歷史 ==========
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# ========== 8. 用戶輸入處理 ==========
+user_input = st.chat_input("💬 告訴我您需要什麼幫助...")
+
+if user_input:
+    # 添加用戶消息到歷史
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    
+    # 顯示用戶消息
+    with st.chat_message("user"):
+        st.markdown(user_input)
+    
+    # 調用 Gemini 生成回覆
+    with st.chat_message("assistant"):
+        with st.spinner("🤔 思考中..."):
+            # 構建系統提示
+            system_prompt = f"""你是 CORA 業務秘書。你是一個專業的業務顧問，幫助公司進行決策。
+
+公司背景信息：
+{BUSINESS_CONTEXT}
+
+對話歷史：
+"""
+            
+            # 添加最近的對話歷史（最後5條消息）
+            recent_messages = st.session_state.messages[-5:]
+            for msg in recent_messages[:-1]:  # 排除最新的用戶消息（已在 user_input 中）
+                role = "user" if msg["role"] == "user" else "assistant"
+                system_prompt += f"\n{role}: {msg['content']}"
+            
+            system_prompt += f"""
+
+你的角色和指導原則：
+1. **專業** - 基於公司政策和數據給建議
+2. **清晰** - 用易懂的方式解釋複雜概念
+3. **完整** - 提供情況分析、選項、建議、風險評估
+4. **可操作** - 給出具體的行動建議
+5. **合規** - 確保所有建議符合公司政策
+
+用戶的最新問題：{user_input}
+
+請以友好但專業的語氣回答。使用 emoji 使回答更易讀。如果涉及政策或風險，請明確說明。
+"""
+            
+            try:
+                response = model.generate_content(system_prompt)
+                assistant_message = response.text
+                
+                # 添加到歷史
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": assistant_message
+                })
+                
+                # 顯示回覆
+                st.markdown(assistant_message)
+                
+            except Exception as e:
+                error_msg = f"❌ 出現問題：{str(e)}"
+                st.error(error_msg)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+
+# ========== 9. 側邊欄 - 會話管理 ==========
 with st.sidebar:
-    st.markdown(f"""
-    ### 📊 {selected_customer}
-    - **支出**: {customer['spend']}
-    - **風險**: {customer['risk']}
-    - **行業**: {customer['industry']}
-    - **折扣限額**: {customer['limit']}%
-    """)
-
-# --- 4. 主要區域 - 兩欄佈局 ---
-col_chat, col_spine = st.columns([2.5, 1])
-
-# === 左欄：Leaf 對話介面 ===
-with col_chat:
-    st.title("🍃 Leaf - 你的 AI 決策秘書")
-    st.caption(f"正在協助：{selected_customer} 續約談判")
+    st.markdown("---")
     
-    # 初始化對話歷史 (Session State)
-    if "messages" not in st.session_state:
+    if st.button("🔄 清空對話"):
         st.session_state.messages = []
-        # 秘書的開場白
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": f"👋 你好！我是 CORA Leaf 決策秘書。我已經準備好幫你分析 {selected_customer} 的續約策略。\n\n💡 你可以問我：\n- '為 {selected_customer} 生成談判簡報'\n- '如果給 12% 折扣會怎樣？'\n- '有什麼風險我應該知道？'"
-        })
+        st.rerun()
     
-    # 顯示對話歷史
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    st.markdown("---")
+    st.markdown("### 📌 快速參考")
+    st.markdown("""
+    **常見問題：**
+    - 客戶折扣政策
+    - 合同條款建議
+    - 風險評估標準
+    - 續約策略分析
+    """)
     
-    # 用戶輸入框
-    user_input = st.chat_input(f"詢問關於 {selected_customer} 的任何事項...")
-    
-    if user_input:
-        # 添加用戶消息到歷史
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        
-        # 顯示用戶消息
-        with st.chat_message("user"):
-            st.markdown(user_input)
-        
-        # 調用 Gemini 生成回覆
-        with st.chat_message("assistant"):
-            with st.spinner("🤔 思考中..."):
-                # 構建上下文
-                prompt = f"""
-                你是 CORA 系統的 Leaf 智能決策秘書。你已經掌握了企業客戶的信息。
-                
-                目前客戶：{selected_customer}
-                客戶背景：
-                - 行業：{customer['industry']}
-                - 年度支出：{customer['spend']}
-                - 風險等級：{customer['risk']}
-                - 歷史記錄：{customer['history']}
-                - 痛點：{customer['pain_points']}
-                - 系統允許的最大折扣：{customer['limit']}%
-                
-                用戶的問題：{user_input}
-                
-                請以專業但友好的語氣，像一個資深顧問一樣回答。
-                - 如果涉及折扣決策，提醒系統的限制是 {customer['limit']}%
-                - 如果用戶詢問風險，要基於客戶的 {customer['risk']} 風險等級
-                - 使用 emoji 和簡潔的格式讓內容易讀
-                - 回答要控制在 150 字以內
-                """
-                
-                try:
-                    response = model.generate_content(prompt)
-                    assistant_message = response.text
-                    
-                    # 添加到歷史
-                    st.session_state.messages.append({"role": "assistant", "content": assistant_message})
-                    
-                    # 顯示回覆
-                    st.markdown(assistant_message)
-                    
-                except Exception as e:
-                    st.error(f"❌ AI 生成失敗: {e}")
-                    error_msg = f"抱歉，我遇到了一個技術問題。錯誤：{str(e)}"
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
-                    st.markdown(error_msg)
-
-# === 右欄：Spine 治理 ===
-with col_spine:
-    st.title("🛡️ Spine")
-    st.caption("治理引擎")
-    
-    st.divider()
-    
-    with st.container(border=True):
-        st.markdown(f"**風險等級**: {customer['risk']}")
-        st.markdown(f"**折扣限額**: {customer['limit']}%")
-        
-        discount_input = st.number_input(
-            "您的折扣決策 (%)",
-            0, 100, customer['limit'], 
-            key=f"discount_{selected_customer}"
-        )
-        
-        if st.button("✅ 提交決策", use_container_width=True):
-            with st.spinner("正在檢查..."):
-                if discount_input > customer['limit']:
-                    st.error(f"❌ 違規！最大 {customer['limit']}%")
-                    st.warning(f"您輸入：{discount_input}%")
-                    st.info("🚨 已自動上報財務總監")
-                else:
-                    st.success(f"✅ 批准！{discount_input}% 折扣符合規則")
-                    st.info("📝 合同草稿已發送給法務部門")
+    st.markdown("---")
+    st.markdown("#### 💡 提示")
+    st.markdown("自然地描述您的業務場景，我會提供針對性的建議。")
