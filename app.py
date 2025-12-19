@@ -1,109 +1,160 @@
 import streamlit as st
 import google.generativeai as genai
-import time
+from datetime import datetime
+import json
 
-st.set_page_config(page_title="CORA 5.0 (Gemini Powered)", layout="wide")
+# --- 1. 頁面配置 ---
+st.set_page_config(page_title="CORA 5.0 Leaf Secretary", layout="wide")
 
-st.title("🚀 CORA 5.0 Enterprise Decision System")
-st.caption("Powered by Google Gemini Pro")
-
-st.sidebar.header("⚙️ Control Panel")
-
+# --- 2. 初始化 ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.0-flash')
-    api_status = "✅ AI Connection Successful"
 except:
-    api_status = "❌ API Key Not Detected"
-    st.error("Please configure GEMINI_API_KEY in Streamlit Secrets")
+    st.error("❌ API Key 未配置")
+    st.stop()
 
-st.sidebar.text(api_status)
-
+# 本體論數據
 customers = {
     "Amazon": {
         "industry": "E-Commerce",
-        "spend": "$2.5M",
-        "risk": "Low",
-        "history": "Long-term partner, 10% annual growth for 3 years.",
-        "pain_points": "Wants to reduce operational costs."
+        "spend": "$2.5M", 
+        "risk": "Low", 
+        "history": "長期合作夥伴，過去3年每年增長10%。最近在詢問新產品線。",
+        "pain_points": "希望降低運維成本，對價格敏感度中等。",
+        "limit": 15
     },
     "Google": {
         "industry": "Tech",
-        "spend": "$1.2M",
-        "risk": "Medium",
-        "history": "Contract expires in 3 months. Competitors reaching out.",
-        "pain_points": "Needs higher SLA levels. Quality critical."
+        "spend": "$1.2M", 
+        "risk": "Medium", 
+        "history": "合同還有3個月到期，競爭對手正在接觸他們。",
+        "pain_points": "需要更高的SLA服務等級，對價格不敏感，但對質量要求極高。",
+        "limit": 5
     },
     "Tesla": {
         "industry": "Automotive",
-        "spend": "$800K",
-        "risk": "High",
-        "history": "Two late payment records last year.",
-        "pain_points": "Budget cuts. Needs cost-effectiveness."
+        "spend": "$800K", 
+        "risk": "High", 
+        "history": "去年有兩次延遲付款記錄。正在進行工廠數字化轉型。",
+        "pain_points": "預算被削減，需要極致的性價比。",
+        "limit": 3
     }
 }
 
-selected_customer_name = st.sidebar.selectbox("Select Target Customer", list(customers.keys()))
-customer_data = customers[selected_customer_name]
+# --- 3. 側邊欄 ---
+st.sidebar.title("⚙️ CORA 控制台")
+selected_customer = st.sidebar.selectbox("選擇客戶", list(customers.keys()))
+customer = customers[selected_customer]
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Customer Name", selected_customer_name)
-col2.metric("Annual Spend", customer_data['spend'])
-col3.metric("Risk Score", customer_data['risk'])
-col4.metric("Industry", customer_data['industry'])
+# 顯示客戶信息卡
+with st.sidebar:
+    st.markdown(f"""
+    ### 📊 {selected_customer}
+    - **支出**: {customer['spend']}
+    - **風險**: {customer['risk']}
+    - **行業**: {customer['industry']}
+    - **折扣限額**: {customer['limit']}%
+    """)
 
-st.divider()
+# --- 4. 主要區域 - 兩欄佈局 ---
+col_chat, col_spine = st.columns([2.5, 1])
 
-st.subheader("🍃 Leaf: Intelligent Decision Brief Generation")
-st.info(f"Current Task: Prepare strategy for {selected_customer_name} renewal negotiation")
-
-if st.button("✨ Call AI to Generate Real-Time Brief"):
-    if api_status.startswith("❌"):
-        st.error("Cannot generate: Please configure API Key first")
-    else:
-        with st.spinner('Orchestrating intelligent agents: Analyzing data...'):
-            prompt = f"""
-            You are the 'Leaf' agent in the CORA system. Generate a sales decision brief.
-            
-            Customer Data:
-            - Name: {selected_customer_name}
-            - Industry: {customer_data['industry']}
-            - Background: {customer_data['history']}
-            - Pain Points: {customer_data['pain_points']}
-            - Risk Level: {customer_data['risk']}
-            
-            Generate a Markdown brief with:
-            1. **Situation Analysis**: Professional analysis
-            2. **Strategy Options**: 3 specific options (conservative, balanced, aggressive)
-            3. **CORA Recommendation**: Final recommendation
-            """
-            
-            try:
-                response = model.generate_content(prompt)
-                st.success("Generation Complete!")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"AI generation failed: {e}")
-
-st.divider()
-
-st.subheader("🛡️ Spine: Risk Governance & Compliance")
-st.caption("Try entering a discount. If it exceeds the limit, it will be blocked.")
-
-limit = 15 if customer_data['risk'] == "Low" else 5
-st.write(f"Current customer risk is **{customer_data['risk']}**, system auto-set max discount to **{limit}%**")
-
-discount = st.number_input("Enter Proposed Discount (%)", 0, 100, 10)
-
-if st.button("Submit Decision"):
-    with st.spinner('Spine evaluating compliance rules...'):
-        time.sleep(0.5)
+# === 左欄：Leaf 對話介面 ===
+with col_chat:
+    st.title("🍃 Leaf - 你的 AI 決策秘書")
+    st.caption(f"正在協助：{selected_customer} 續約談判")
     
-    if discount > limit:
-        st.error(f"❌ Blocked! Spine detected violation")
-        st.warning(f"Reason: Max discount for {selected_customer_name} is {limit}%, you entered {discount}%.")
-        st.markdown("**Execution Action**: \n* 🚫 Auto-reject request\n* 📩 Send alert report to regional director")
-    else:
-        st.success("✅ Approved! Decision complies with governance rules")
-        st.markdown("**Execution Action**: \n* 📝 Auto-generate contract draft\n* 📧 Notify legal department")
+    # 初始化對話歷史 (Session State)
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        # 秘書的開場白
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": f"👋 你好！我是 CORA Leaf 決策秘書。我已經準備好幫你分析 {selected_customer} 的續約策略。\n\n💡 你可以問我：\n- '為 {selected_customer} 生成談判簡報'\n- '如果給 12% 折扣會怎樣？'\n- '有什麼風險我應該知道？'"
+        })
+    
+    # 顯示對話歷史
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # 用戶輸入框
+    user_input = st.chat_input(f"詢問關於 {selected_customer} 的任何事項...")
+    
+    if user_input:
+        # 添加用戶消息到歷史
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        
+        # 顯示用戶消息
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        
+        # 調用 Gemini 生成回覆
+        with st.chat_message("assistant"):
+            with st.spinner("🤔 思考中..."):
+                # 構建上下文
+                prompt = f"""
+                你是 CORA 系統的 Leaf 智能決策秘書。你已經掌握了企業客戶的信息。
+                
+                目前客戶：{selected_customer}
+                客戶背景：
+                - 行業：{customer['industry']}
+                - 年度支出：{customer['spend']}
+                - 風險等級：{customer['risk']}
+                - 歷史記錄：{customer['history']}
+                - 痛點：{customer['pain_points']}
+                - 系統允許的最大折扣：{customer['limit']}%
+                
+                用戶的問題：{user_input}
+                
+                請以專業但友好的語氣，像一個資深顧問一樣回答。
+                - 如果涉及折扣決策，提醒系統的限制是 {customer['limit']}%
+                - 如果用戶詢問風險，要基於客戶的 {customer['risk']} 風險等級
+                - 使用 emoji 和簡潔的格式讓內容易讀
+                - 回答要控制在 150 字以內
+                """
+                
+                try:
+                    response = model.generate_content(prompt)
+                    assistant_message = response.text
+                    
+                    # 添加到歷史
+                    st.session_state.messages.append({"role": "assistant", "content": assistant_message})
+                    
+                    # 顯示回覆
+                    st.markdown(assistant_message)
+                    
+                except Exception as e:
+                    st.error(f"❌ AI 生成失敗: {e}")
+                    error_msg = f"抱歉，我遇到了一個技術問題。錯誤：{str(e)}"
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                    st.markdown(error_msg)
+
+# === 右欄：Spine 治理 ===
+with col_spine:
+    st.title("🛡️ Spine")
+    st.caption("治理引擎")
+    
+    st.divider()
+    
+    with st.container(border=True):
+        st.markdown(f"**風險等級**: {customer['risk']}")
+        st.markdown(f"**折扣限額**: {customer['limit']}%")
+        
+        discount_input = st.number_input(
+            "您的折扣決策 (%)",
+            0, 100, customer['limit'], 
+            key=f"discount_{selected_customer}"
+        )
+        
+        if st.button("✅ 提交決策", use_container_width=True):
+            with st.spinner("正在檢查..."):
+                if discount_input > customer['limit']:
+                    st.error(f"❌ 違規！最大 {customer['limit']}%")
+                    st.warning(f"您輸入：{discount_input}%")
+                    st.info("🚨 已自動上報財務總監")
+                else:
+                    st.success(f"✅ 批准！{discount_input}% 折扣符合規則")
+                    st.info("📝 合同草稿已發送給法務部門")
